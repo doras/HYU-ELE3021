@@ -37,6 +37,12 @@ sys_kill(void)
 }
 
 int
+sys_getppid(void)
+{
+    return getppid();
+}
+
+int
 sys_getpid(void)
 {
   return myproc()->pid;
@@ -89,3 +95,17 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+
+int
+sys_yield(void)
+{
+  yield();
+  return 0;
+}
+
+int
+sys_getlev(void)
+{
+  return myproc()->quelev;
+} 

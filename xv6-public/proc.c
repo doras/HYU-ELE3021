@@ -12,6 +12,10 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
+struct {
+  struct proc *proc[NPROC];
+} fbqueue[3];
+
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -122,6 +126,7 @@ userinit(void)
 {
   struct proc *p;
   extern char _binary_initcode_start[], _binary_initcode_size[];
+  struct proc **queelem;
 
   p = allocproc();
   
@@ -142,6 +147,10 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  p->quancnt = 0;
+  p->alltcnt = 0;
+  p->quelev = 2;
+
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
   // writes to be visible, and the lock is also needed
@@ -149,6 +158,13 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+
+  for(queelem = fbqueue[2].proc; queelem < &fbqueue[2].proc[NPROC]; queelem++){
+    if(*queelem == 0){
+      *queelem = p;
+      break;
+    }
+  }
 
   release(&ptable.lock);
 }
@@ -183,6 +199,7 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
+  struct proc **queelem;
 
   // Allocate process.
   if((np = allocproc()) == 0){
@@ -212,9 +229,21 @@ fork(void)
 
   pid = np->pid;
 
+
+  np->quancnt = 0;
+  np->alltcnt = 0;
+  np->quelev = 2;
+
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+
+  for(queelem = fbqueue[2].proc; queelem < &fbqueue[2].proc[NPROC]; queelem++){
+    if(*queelem == 0){
+      *queelem = np;
+      break;
+    }
+  }
 
   release(&ptable.lock);
 
@@ -322,10 +351,210 @@ wait(void)
 void
 scheduler(void)
 {
+  uint i;
   struct proc *p;
+  uint startpoint2, startpoint1, startpoint0;
   struct cpu *c = mycpu();
   c->proc = 0;
+
+
+  startpoint2 = 0;
+  startpoint1 = 0;
+  startpoint0 = 0;
+
+highest:
   
+  // Enable interrupts on this processor.
+  sti();
+
+  acquire(&ptable.lock);
+
+  i = startpoint2;
+
+  do{
+    if(fbqueue[2].proc[i] != 0 && 
+       fbqueue[2].proc[i]->state == RUNNABLE){
+      p = fbqueue[2].proc[i];
+      
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+
+      // Go back to the search routine.
+      startpoint2 = (i + 1) % NPROC;
+
+      release(&ptable.lock);
+      goto highest;
+    }
+    
+    i = (i + 1) % NPROC;
+  } while(i != startpoint2);
+
+  i = startpoint1;
+
+  do{
+    if(fbqueue[1].proc[i] != 0 && 
+       fbqueue[1].proc[i]->state == RUNNABLE){
+      p = fbqueue[1].proc[i];
+      
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+
+      // Go back to the search routine.
+      startpoint1 = (i + 1) % NPROC;
+
+      release(&ptable.lock);
+      goto highest;
+    }
+    
+    i = (i + 1) % NPROC;
+  } while(i != startpoint1);
+
+  i = startpoint0;
+
+  do{
+    if(fbqueue[0].proc[i] != 0 && 
+       fbqueue[0].proc[i]->state == RUNNABLE){
+      p = fbqueue[0].proc[i];
+      
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+
+      // Go back to the search routine.
+      startpoint0 = (i + 1) % NPROC;
+
+      release(&ptable.lock);
+      goto highest;
+    }
+    
+    i = (i + 1) % NPROC;
+  } while(i != startpoint0);
+
+
+  release(&ptable.lock);
+  goto highest;
+/*
+  for(;;){
+
+    while(fbqueue[2].numready > 0){
+      // Enable interrupts on this processor.
+      sti();
+
+      acquire(&ptable.lock);
+      for(p = fbqueue[2].proc; 
+          p < &fbqueue[2].proc[NPROC] && fbqueue[2].numready > 0; p++){
+        if(*p == 0 || (*p)->state != RUNNABLE)
+          continue;
+
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        c->proc = *p;
+        switchuvm(*p);
+        (*p)->state = RUNNING;
+
+        swtch(&(c->scheduler), (*p)->context);
+        switchkvm();
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+      release(&ptable.lock);
+    }
+
+    while(fbqueue[2].numready < 1 && fbqueue[1].numready > 0){
+      // Enable interrupts on this processor.
+      sti();
+
+      acquire(&ptable.lock);
+      for(p = fbqueue[1].proc; 
+          p < &fbqueue[1].proc[NPROC] 
+            && fbqueue[2].numready < 1 
+            && fbqueue[1].numready > 0; p++){
+        if(*p == 0 || (*p)->state != RUNNABLE)
+          continue;
+
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        c->proc = *p;
+        switchuvm(*p);
+        (*p)->state = RUNNING;
+
+        swtch(&(c->scheduler), (*p)->context);
+        switchkvm();
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+      release(&ptable.lock);
+    }
+
+    while(fbqueue[2].numready < 1 && fbqueue[1].numready < 1){
+      // Enable interrupts on this processor.
+      sti();
+
+      acquire(&ptable.lock);
+      for(p = fbqueue[0].proc; 
+          p < &fbqueue[0].proc[NPROC] 
+            && fbqueue[2].numready < 1 
+            && fbqueue[1].numready < 1; p++){
+
+        if(*p == 0 || (*p)->state != RUNNABLE)
+          continue;
+
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        c->proc = *p;
+        switchuvm(*p);
+        (*p)->state = RUNNING;
+
+        swtch(&(c->scheduler), (*p)->context);
+        switchkvm();
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+      release(&ptable.lock);
+    }
+  }    
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
@@ -350,9 +579,11 @@ scheduler(void)
       // It should have changed its p->state before coming back.
       c->proc = 0;
     }
+
     release(&ptable.lock);
 
   }
+*/
 }
 
 // Enter scheduler.  Must hold only ptable.lock
@@ -386,6 +617,7 @@ void
 yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
+  myproc()->quancnt = 0;
   myproc()->state = RUNNABLE;
   sched();
   release(&ptable.lock);
@@ -531,4 +763,91 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+int
+getppid(void)
+{
+    return myproc()->parent->pid;
+}
+
+void
+declevel(struct proc *p)
+{
+  struct proc **procptr;
+  int currlev = p->quelev;
+
+  if(currlev < 1)
+    panic("declevel quelev");
+
+  acquire(&ptable.lock);
+
+  for(procptr = fbqueue[currlev].proc;
+      procptr < &fbqueue[currlev].proc[NPROC]; procptr++){
+    if(*procptr == p)
+      break;
+  }
+
+  if(procptr >= &fbqueue[currlev].proc[NPROC])
+    panic("declevel p not found");
+  
+  *procptr = 0;
+
+  for(procptr = fbqueue[currlev-1].proc;
+      procptr < &fbqueue[currlev-1].proc[NPROC]; procptr++){
+    if(*procptr == 0)
+      break;
+  }
+
+  if(procptr >= &fbqueue[currlev-1].proc[NPROC])
+    panic("declevel p not found");
+
+  *procptr = p;
+
+  p->alltcnt = 0;
+  p->quelev--;
+
+  release(&ptable.lock);
+}
+
+
+void
+priboost(void)
+{
+  struct proc *tmpproc[NPROC];
+  uint len = 0;
+  int i;
+  struct proc **procptr;
+
+  acquire(&ptable.lock);
+  
+  for(procptr = fbqueue[0].proc; procptr < &fbqueue[0].proc[NPROC]; procptr++){
+    if(*procptr != 0){
+      tmpproc[len] = *procptr;
+      *procptr = 0;
+      len++;
+    }
+  }
+
+  for(procptr = fbqueue[1].proc; procptr < &fbqueue[1].proc[NPROC]; procptr++){
+    if(*procptr != 0){
+      tmpproc[len] = *procptr;
+      *procptr = 0;
+      len++;
+    }
+  }
+
+
+  for(procptr = fbqueue[2].proc, i = 0; 
+      procptr < &fbqueue[2].proc[NPROC] && i < len; procptr++){
+    if(*procptr == 0){
+      *procptr = tmpproc[i];
+      i++;
+    }
+
+    (*procptr)->alltcnt = 0;
+    (*procptr)->quelev = 2;
+  }
+
+  release(&ptable.lock);
 }

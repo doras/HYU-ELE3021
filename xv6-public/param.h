@@ -11,4 +11,8 @@
 #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
 #define FSSIZE       1000  // size of file system in blocks
-
+#define TIMEQUANTUM2  1  // lenght of time quantum in level 2 queue (ticks)
+#define TIMEQUANTUM1  2  // length of time quantum in level 1 queue (ticks)
+#define TIMEQUANTUM0  4  // length of time quantum in level 0 queue (ticks)
+#define TIMEALLOT2    5  // length of time allotment in level 2 queue (ticks)
+#define TIMEALLOT1   10  // length of time allotment in level 1 queue (ticks)

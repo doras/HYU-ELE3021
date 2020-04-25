@@ -13,6 +13,7 @@ struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
+uint boostcnt;
 
 void
 tvinit(void)
@@ -53,6 +54,12 @@ trap(struct trapframe *tf)
       ticks++;
       wakeup(&ticks);
       release(&tickslock);
+      
+      boostcnt++;
+      if(boostcnt >= 100){
+        boostcnt = 0;
+        priboost();
+      }
     }
     lapiceoi();
     break;
@@ -100,11 +107,41 @@ trap(struct trapframe *tf)
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
     exit();
 
-  // Force process to give up CPU on clock tick.
-  // If interrupts were on while locks held, would need to check nlock.
+  // Check time quantum and time allotment.
+  // If it needs yield, give up CPU. 
   if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
+     tf->trapno == T_IRQ0+IRQ_TIMER){
+    
+    myproc()->quancnt++;
+    myproc()->alltcnt++;
+    
+    switch(myproc()->quelev){
+    case 2:
+      if(myproc()->alltcnt >= TIMEALLOT2){
+        declevel(myproc());
+        yield();
+      } else if(myproc()->quancnt >= TIMEQUANTUM2){
+        yield();
+      }
+      break;
+    
+    case 1:
+      if(myproc()->alltcnt >= TIMEALLOT1){
+        declevel(myproc());
+        yield();
+      } else if(myproc()->quancnt >= TIMEQUANTUM1){
+        yield();
+      }
+      break;
+    
+    case 0:
+      if(myproc()->quancnt >= TIMEQUANTUM0){
+        yield();
+      }
+      break;
+    }
+  }
+
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
