@@ -400,7 +400,7 @@ scheduler(void)
 {
   uint i;
   struct proc *p;
-  struct sproc *sproc, *minproc;
+  struct sproc *sproc, *minsproc = 0;
   uint minpass;
   uint mask = 1 << (sizeof(uint) * 8 - 1);
   uint startpoint2, startpoint1, startpoint0;
@@ -419,6 +419,11 @@ scheduler(void)
   startpoint0 = 0;
 
   for(;;){
+
+    // Enable interrupts on this processor.
+    sti();
+
+    acquire(&ptable.lock);
 
     // Find the process to run.
     // Search minimum pass.
@@ -446,6 +451,9 @@ scheduler(void)
       }
     }
 
+    if(minsproc == 0)
+      panic("scheduler minsproc");
+
     // Run the minsproc!
     
 
@@ -468,38 +476,22 @@ scheduler(void)
       // It should have changed its p->state before coming back.
       c->proc = 0;
 
-      // Add stride to pass value.
-      // And handle overflow.
-      if(sptable.overflow == 0 && 
-          minsproc->pass & mask && 
-          (minsproc->pass + minsproc->stride) & mask == 0)
-        sptable.overflow = 1;
-      minsproc->pass += minsproc->stride;
 
-      if(sptable.overflow){
-        for(sproc = sptable.proc; sproc < &sptable.proc[NPROC+1]; sproc++){
-          if(sproc->proc && sproc->pass & mask)
-            break;
-        }
-        if(sproc >= &sptable.proc[NPROC+1])
-          sptable.overflow = 0;
-      }
     } else {
-      // If minproc is MLFQ processes.
-      timequant = 0;
-
+      // If minsproc is MLFQ processes.
       ticks0 = ticks;
+
+      release(&ptable.lock);
 
 highest:   
       
       // Enable interrupts on this processor.
       sti();
 
-      if(ticks - ticks0 > TIMEQUANTUM0)
-        goto mlfqdone;
-
-
       acquire(&ptable.lock);
+
+      if(ticks - ticks0 > TIMEQUANTUM0)
+        goto scheduledone;
 
       i = startpoint2;
 
@@ -594,13 +586,31 @@ highest:
         i = (i + 1) % NPROC;
       } while(i != startpoint0);
 
-
       release(&ptable.lock);
       goto highest;
 
-mlfqdone:
-      
     }
+scheduledone:
+
+    // Add stride to pass value.
+    // And handle overflow.
+    if(sptable.overflow == 0 && 
+        minsproc->pass & mask && 
+        ((minsproc->pass + minsproc->stride) & mask) == 0)
+      sptable.overflow = 1;
+    minsproc->pass += minsproc->stride;
+
+    if(sptable.overflow){
+      for(sproc = sptable.proc; sproc < &sptable.proc[NPROC+1]; sproc++){
+        if(sproc->proc && sproc->pass & mask)
+          break;
+      }
+      if(sproc >= &sptable.proc[NPROC+1])
+        sptable.overflow = 0;
+    }
+    
+    release(&ptable.lock);
+
   }
 
 /*
