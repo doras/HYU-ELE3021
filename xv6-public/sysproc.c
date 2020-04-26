@@ -109,3 +109,13 @@ sys_getlev(void)
 {
   return myproc()->quelev;
 } 
+
+int
+sys_set_cpu_share(void)
+{
+  int shr;
+
+  if(argint(0, &shr) < 0)
+    return -1;
+  return set_cpu_share(shr);
+}

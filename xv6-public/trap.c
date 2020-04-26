@@ -135,6 +135,7 @@ trap(struct trapframe *tf)
       break;
     
     case 0:
+      // Stride processes are always this case.
       if(myproc()->quancnt >= TIMEQUANTUM0){
         yield();
       }

@@ -16,6 +16,18 @@ struct {
   struct proc *proc[NPROC];
 } fbqueue[3];
 
+struct sproc {
+  struct proc *proc;  // Pointing proc element of ptable.
+  int ticket;         // CPU share ratio.
+  int stride;         // Stride of process.
+  uint pass;          // Pass of process.
+};
+
+struct {
+  struct sproc proc[NPROC+1];     // First element is always MLFQ.
+  int overflow;	                        // Set during overflag over the table.
+} sptable;
+
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -302,6 +314,8 @@ int
 wait(void)
 {
   struct proc *p;
+  struct proc **ptr;
+  struct sproc *sp;
   int havekids, pid;
   struct proc *curproc = myproc();
   
@@ -324,6 +338,39 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+
+        if(p->quelev > 0){
+          for(ptr = fbqueue[p->quelev].proc; 
+              ptr < &fbqueue[p->quelev].proc[NPROC]; ptr++){
+            if(*ptr == p){
+              *ptr = 0;
+              break;
+            }
+          }
+        } else {
+          for(sp = sptable.proc; sp < &sptable.proc[NPROC+1]; sp++){
+            if(sp->proc == p){
+              sptable.proc[0].ticket += sp->ticket;
+              sptable.proc[0].stride = 6400 / sptable.proc[0].ticket;
+              sp->proc = 0;
+              sp->ticket = 0;
+              sp->stride = 0;
+              sp->pass = 0;
+              break;
+            }
+          }
+          // p is not a stride process.
+          if(sp == &sptable.proc[NPROC+1]){
+            for(ptr = fbqueue[0].proc; 
+                ptr < &fbqueue[0].proc[NPROC]; ptr++){
+              if(*ptr == p){
+                *ptr = 0;
+                break;
+              }
+            }
+          }
+        }
+        
         release(&ptable.lock);
         return pid;
       }
@@ -353,29 +400,60 @@ scheduler(void)
 {
   uint i;
   struct proc *p;
+  struct sproc *sproc, *minproc;
+  uint minpass;
+  uint mask = 1 << (sizeof(uint) * 8 - 1);
   uint startpoint2, startpoint1, startpoint0;
+  uint ticks0;
   struct cpu *c = mycpu();
   c->proc = 0;
+
+  sptable.proc[0].proc = 0;
+  sptable.proc[0].ticket = 100;
+  sptable.proc[0].stride = 6400 / 100;
+  sptable.proc[0].pass = 0;
 
 
   startpoint2 = 0;
   startpoint1 = 0;
   startpoint0 = 0;
 
-highest:
-  
-  // Enable interrupts on this processor.
-  sti();
+  for(;;){
 
-  acquire(&ptable.lock);
+    // Find the process to run.
+    // Search minimum pass.
 
-  i = startpoint2;
+    if(sptable.overflow){
+      // If overflow is occurring, small pass values 
+      // are considered an overflowed value. 
+      // So, they should not be regarded as minimum pass.
+      minpass = -1;
+      for(sproc = sptable.proc; sproc < &sptable.proc[NPROC+1]; sproc++){
+        if(sproc->proc && minpass >= sproc->pass && sproc->pass & mask){
+          minpass = sproc->pass;
+          minsproc = sproc;
+        }
+      }
+    } else {
+      // There is no overflow.
+      minpass = sptable.proc[0].pass;
+      minsproc = sptable.proc;
+      for(sproc = &sptable.proc[1]; sproc < &sptable.proc[NPROC+1]; sproc++){
+        if(sproc->proc && minpass > sproc->pass){
+          minpass = sproc->pass;
+          minsproc = sproc;
+        }
+      }
+    }
 
-  do{
-    if(fbqueue[2].proc[i] != 0 && 
-       fbqueue[2].proc[i]->state == RUNNABLE){
-      p = fbqueue[2].proc[i];
-      
+    // Run the minsproc!
+    
+
+    // If the process is just stride process,
+    // (not MLFQ processes)
+    if(minsproc != sptable.proc){
+
+      p = minsproc->proc;
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
@@ -390,81 +468,141 @@ highest:
       // It should have changed its p->state before coming back.
       c->proc = 0;
 
-      // Go back to the search routine.
-      startpoint2 = (i + 1) % NPROC;
+      // Add stride to pass value.
+      // And handle overflow.
+      if(sptable.overflow == 0 && 
+          minsproc->pass & mask && 
+          (minsproc->pass + minsproc->stride) & mask == 0)
+        sptable.overflow = 1;
+      minsproc->pass += minsproc->stride;
 
-      release(&ptable.lock);
-      goto highest;
-    }
-    
-    i = (i + 1) % NPROC;
-  } while(i != startpoint2);
+      if(sptable.overflow){
+        for(sproc = sptable.proc; sproc < &sptable.proc[NPROC+1]; sproc++){
+          if(sproc->proc && sproc->pass & mask)
+            break;
+        }
+        if(sproc >= &sptable.proc[NPROC+1])
+          sptable.overflow = 0;
+      }
+    } else {
+      // If minproc is MLFQ processes.
+      timequant = 0;
 
-  i = startpoint1;
+      ticks0 = ticks;
 
-  do{
-    if(fbqueue[1].proc[i] != 0 && 
-       fbqueue[1].proc[i]->state == RUNNABLE){
-      p = fbqueue[1].proc[i];
+highest:   
       
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+      // Enable interrupts on this processor.
+      sti();
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
+      if(ticks - ticks0 > TIMEQUANTUM0)
+        goto mlfqdone;
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
 
-      // Go back to the search routine.
-      startpoint1 = (i + 1) % NPROC;
+      acquire(&ptable.lock);
+
+      i = startpoint2;
+
+      do{
+        if(fbqueue[2].proc[i] != 0 && 
+           fbqueue[2].proc[i]->state == RUNNABLE){
+          p = fbqueue[2].proc[i];
+          
+          // Switch to chosen process.  It is the process's job
+          // to release ptable.lock and then reacquire it
+          // before jumping back to us.
+          c->proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+
+          swtch(&(c->scheduler), p->context);
+          switchkvm();
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+
+          // Go back to the search routine.
+          startpoint2 = (i + 1) % NPROC;
+
+          release(&ptable.lock);
+          goto highest;
+        }
+        
+        i = (i + 1) % NPROC;
+      } while(i != startpoint2);
+
+      i = startpoint1;
+
+      do{
+        if(fbqueue[1].proc[i] != 0 && 
+           fbqueue[1].proc[i]->state == RUNNABLE){
+          p = fbqueue[1].proc[i];
+          
+          // Switch to chosen process.  It is the process's job
+          // to release ptable.lock and then reacquire it
+          // before jumping back to us.
+          c->proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+
+          swtch(&(c->scheduler), p->context);
+          switchkvm();
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+
+          // Go back to the search routine.
+          startpoint1 = (i + 1) % NPROC;
+
+          release(&ptable.lock);
+          goto highest;
+        }
+        
+        i = (i + 1) % NPROC;
+      } while(i != startpoint1);
+
+      i = startpoint0;
+
+      do{
+        if(fbqueue[0].proc[i] != 0 && 
+           fbqueue[0].proc[i]->state == RUNNABLE){
+          p = fbqueue[0].proc[i];
+          
+          // Switch to chosen process.  It is the process's job
+          // to release ptable.lock and then reacquire it
+          // before jumping back to us.
+          c->proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+
+          swtch(&(c->scheduler), p->context);
+          switchkvm();
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+
+          // Go back to the search routine.
+          startpoint0 = (i + 1) % NPROC;
+
+          release(&ptable.lock);
+          goto highest;
+        }
+        
+        i = (i + 1) % NPROC;
+      } while(i != startpoint0);
+
 
       release(&ptable.lock);
       goto highest;
-    }
-    
-    i = (i + 1) % NPROC;
-  } while(i != startpoint1);
 
-  i = startpoint0;
-
-  do{
-    if(fbqueue[0].proc[i] != 0 && 
-       fbqueue[0].proc[i]->state == RUNNABLE){
-      p = fbqueue[0].proc[i];
+mlfqdone:
       
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-
-      // Go back to the search routine.
-      startpoint0 = (i + 1) % NPROC;
-
-      release(&ptable.lock);
-      goto highest;
     }
-    
-    i = (i + 1) % NPROC;
-  } while(i != startpoint0);
+  }
 
-
-  release(&ptable.lock);
-  goto highest;
 /*
   for(;;){
 
@@ -617,9 +755,9 @@ void
 yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
-  myproc()->quancnt = 0;
   myproc()->state = RUNNABLE;
   sched();
+  myproc()->quancnt = 0;
   release(&ptable.lock);
 }
 
@@ -850,4 +988,64 @@ priboost(void)
   }
 
   release(&ptable.lock);
+}
+
+int
+set_cpu_share(int share)
+{
+  struct proc **p;
+  struct proc *currproc;
+  int currlev;
+  struct sproc *sproc;
+  struct sproc *target = 0;
+  uint minpass = sptable.proc[0].pass;
+  uint mask = 1 << (sizeof(uint) * 8 - 1);
+
+  // Check the total stride share is at most 80%.
+  // If exceed 80%, fail and return -1.
+  if(sptable.proc[0].ticket - share < 20){
+    return -1;
+  }
+
+  currproc = myproc();
+  currlev = currproc->quelev;
+  
+  // Remove from the MLFQ.
+  for(p = fbqueue[currlev].proc; p < &fbqueue[currlev].proc[NPROC]; p++){
+    if(*p == currproc){
+      *p = 0;
+      break;
+    }
+  }
+
+  // Insert the process into sptable.
+  if(sptable.overflow){
+    minpass = (sptable.proc[0].pass & mask) ? sptable.proc[0].pass : -1;
+    for(sproc = &sptable.proc[1]; sproc < &sptable.proc[NPROC+1]; sproc++){
+      if(sproc->proc == 0 && !target)
+        target = sproc;
+      if(sproc->proc && minpass > sproc->pass && sproc->pass & mask)
+        minpass = sproc->pass;
+    }
+  } else {
+    for(sproc = &sptable.proc[1]; sproc < &sptable.proc[NPROC+1]; sproc++){
+      if(sproc->proc == 0 && !target)
+        target = sproc;
+      if(sproc->proc && minpass > sproc->pass)
+        minpass = sproc->pass;
+    }
+  }
+
+  target->proc = currproc;
+  target->ticket = share;
+  target->stride = 6400 / share;
+  target->pass = minpass;
+
+  sptable.proc[0].ticket -= share;
+  sptable.proc[0].stride = 6400 / sptable.proc[0].ticket;
+
+  // Time quantum of stride process is same as of MLFQ lowest level.
+  currproc->quelev = 0;
+
+  return 0;
 }
