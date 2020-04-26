@@ -462,6 +462,13 @@ scheduler(void)
     if(minsproc != sptable.proc){
 
       p = minsproc->proc;
+
+      // If the process is not runnable
+      // , just proceed pass and keep searching.
+      if(p->state != RUNNABLE){
+        goto scheduledone;
+      }
+
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
