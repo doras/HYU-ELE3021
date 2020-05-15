@@ -25,7 +25,7 @@ struct sproc {
 
 struct {
   struct sproc proc[NPROC+1];     // First element is always MLFQ.
-  int overflow;                                // Set during overflag over the table.
+  int overflow;                   // Set during overflag over the table.
 } sptable;
 
 static struct proc *initproc;
@@ -413,6 +413,7 @@ scheduler(void)
   struct proc *p;
   struct sproc *sproc, *minsproc = 0;
   uint minpass;
+  uint mlfqstride = 0;
   uint mask = 1 << (sizeof(uint) * 8 - 1);
   uint startpoint2, startpoint1, startpoint0;
   uint ticks0;
@@ -498,6 +499,7 @@ scheduler(void)
     } else {
       // If minsproc is MLFQ processes.
       ticks0 = ticks;
+      mlfqstride = minsproc->stride;
 
       release(&ptable.lock);
 
@@ -535,8 +537,9 @@ highest:
           // Go back to the search routine.
           startpoint2 = (i + 1) % NPROC;
 
-          release(&ptable.lock);
-          goto highest;
+          mlfqstride = minsproc->stride;
+
+          goto scheduledone;
         }
         
         i = (i + 1) % NPROC;
@@ -566,8 +569,9 @@ highest:
           // Go back to the search routine.
           startpoint1 = (i + 1) % NPROC;
 
-          release(&ptable.lock);
-          goto highest;
+          mlfqstride = minsproc->stride * 2;
+
+          goto scheduledone;
         }
         
         i = (i + 1) % NPROC;
@@ -597,8 +601,9 @@ highest:
           // Go back to the search routine.
           startpoint0 = (i + 1) % NPROC;
 
-          release(&ptable.lock);
-          goto highest;
+          mlfqstride = minsproc->stride * 4;
+
+          goto scheduledone;
         }
         
         i = (i + 1) % NPROC;
@@ -614,9 +619,9 @@ scheduledone:
     // And handle overflow.
     if(sptable.overflow == 0 && 
         minsproc->pass & mask && 
-        ((minsproc->pass + minsproc->stride) & mask) == 0)
+        ((minsproc->pass + mlfqstride) & mask) == 0)
       sptable.overflow = 1;
-    minsproc->pass += minsproc->stride;
+    minsproc->pass += mlfqstride;
 
     if(sptable.overflow){
       for(sproc = sptable.proc; sproc < &sptable.proc[NPROC+1]; sproc++){
