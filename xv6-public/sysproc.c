@@ -100,6 +100,7 @@ sys_uptime(void)
 int
 sys_yield(void)
 {
+  myproc()->alltcnt++;
   yield();
   return 0;
 }
