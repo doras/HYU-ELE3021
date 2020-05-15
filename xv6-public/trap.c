@@ -56,7 +56,7 @@ trap(struct trapframe *tf)
       release(&tickslock);
       
       boostcnt++;
-      if(boostcnt >= 100){
+      if(boostcnt >= 200){
         boostcnt = 0;
         priboost();
       }
@@ -116,6 +116,13 @@ trap(struct trapframe *tf)
     myproc()->alltcnt++;
     
     switch(myproc()->quelev){
+    case 3:
+      // It is stride process.
+      if(myproc()->quancnt >= TIMEQUANTUM3){
+        yield();
+      }
+      break;
+
     case 2:
       if(myproc()->alltcnt >= TIMEALLOT2){
         declevel(myproc());
@@ -135,7 +142,6 @@ trap(struct trapframe *tf)
       break;
     
     case 0:
-      // Stride processes are always this case.
       if(myproc()->quancnt >= TIMEQUANTUM0){
         yield();
       }

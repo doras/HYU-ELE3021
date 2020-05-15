@@ -101,6 +101,10 @@ int
 sys_yield(void)
 {
   myproc()->alltcnt++;
+  if((myproc()->quelev == 2 && myproc()->alltcnt >= TIMEALLOT2)
+      || (myproc()->quelev == 1 && myproc()->alltcnt >= TIMEALLOT1)){
+    declevel(myproc());
+  }
   yield();
   return 0;
 }

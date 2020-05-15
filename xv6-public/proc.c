@@ -25,7 +25,7 @@ struct sproc {
 
 struct {
   struct sproc proc[NPROC+1];     // First element is always MLFQ.
-  int overflow;	                        // Set during overflag over the table.
+  int overflow;                                // Set during overflag over the table.
 } sptable;
 
 static struct proc *initproc;
@@ -305,6 +305,24 @@ exit(void)
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   sched();
+
+  acquire(&ptable.lock);
+
+  // Parent might be sleeping in wait().
+  wakeup1(curproc->parent);
+
+  // Pass abandoned children to init.
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->parent == curproc){
+      p->parent = initproc;
+      if(p->state == ZOMBIE)
+        wakeup1(initproc);
+    }
+  }
+
+  // Jump into the scheduler, never to return.
+  curproc->state = ZOMBIE;
+  sched();
   panic("zombie exit");
 }
 
@@ -339,7 +357,7 @@ wait(void)
         p->killed = 0;
         p->state = UNUSED;
 
-        if(p->quelev > 0){
+        if(p->quelev <= 2){
           for(ptr = fbqueue[p->quelev].proc; 
               ptr < &fbqueue[p->quelev].proc[NPROC]; ptr++){
             if(*ptr == p){
@@ -359,15 +377,8 @@ wait(void)
               break;
             }
           }
-          // p is not a stride process.
           if(sp == &sptable.proc[NPROC+1]){
-            for(ptr = fbqueue[0].proc; 
-                ptr < &fbqueue[0].proc[NPROC]; ptr++){
-              if(*ptr == p){
-                *ptr = 0;
-                break;
-              }
-            }
+            panic("wait stride process");
           }
         }
         
@@ -497,7 +508,7 @@ highest:
 
       acquire(&ptable.lock);
 
-      if(ticks - ticks0 > TIMEQUANTUM0)
+      if(ticks - ticks0 > TIMEQUANTUM3)
         goto scheduledone;
 
       i = startpoint2;
@@ -1061,8 +1072,8 @@ set_cpu_share(int share)
   sptable.proc[0].ticket -= share;
   sptable.proc[0].stride = 6400 / sptable.proc[0].ticket;
 
-  // Time quantum of stride process is same as of MLFQ lowest level.
-  currproc->quelev = 0;
+  // quelev of stride process is 3 which is actually invalid MLFQ quelev.
+  currproc->quelev = 3;
 
   return 0;
 }
