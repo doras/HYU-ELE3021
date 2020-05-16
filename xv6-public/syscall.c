@@ -108,6 +108,7 @@ extern int sys_getppid(void);
 extern int sys_yield(void);
 extern int sys_getlev(void); 
 extern int sys_set_cpu_share(void);
+extern int sys_thread_create(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -136,6 +137,7 @@ static int (*syscalls[])(void) = {
 [SYS_yield]   sys_yield,
 [SYS_getlev]  sys_getlev,  
 [SYS_set_cpu_share] sys_set_cpu_share,
+[SYS_thread_create] sys_thread_create,
 };
 
 void

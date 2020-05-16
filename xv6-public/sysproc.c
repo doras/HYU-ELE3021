@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include "thread.h"
 
 int
 sys_fork(void)
@@ -123,4 +124,17 @@ sys_set_cpu_share(void)
   if(argint(0, &shr) < 0)
     return -1;
   return set_cpu_share(shr);
+}
+
+int
+sys_thread_create(void)
+{
+  struct thread_t *thread;
+  void* (*start_routine)(void*);
+  void* arg;
+
+  if(argptr(0, (void*)&thread, sizeof(*thread)) < 0 ||
+     argint(1, (int*)&start_routine) < 0 || argint(2, (int*)&arg) < 0)
+    return -1;
+  return thread_create(thread, start_routine, arg);
 }

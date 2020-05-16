@@ -111,41 +111,45 @@ trap(struct trapframe *tf)
   // If it needs yield, give up CPU. 
   if(myproc() && myproc()->state == RUNNING &&
      tf->trapno == T_IRQ0+IRQ_TIMER){
-    
-    myproc()->quancnt++;
-    myproc()->alltcnt++;
-    
-    switch(myproc()->quelev){
-    case 3:
-      // It is stride process.
-      if(myproc()->quancnt >= TIMEQUANTUM3){
-        yield();
+    if(myproc()->pid == myproc()->tid && myproc()->numthd == 1){    
+      myproc()->quancnt++;
+      myproc()->alltcnt++;
+      
+      switch(myproc()->quelev){
+      case 3:
+        // It is stride process.
+        if(myproc()->quancnt >= TIMEQUANTUM3){
+          yield();
+        }
+        break;
+  
+      case 2:
+        if(myproc()->alltcnt >= TIMEALLOT2){
+          declevel(myproc());
+          yield();
+        } else if(myproc()->quancnt >= TIMEQUANTUM2){
+          yield();
+        }
+        break;
+      
+      case 1:
+        if(myproc()->alltcnt >= TIMEALLOT1){
+          declevel(myproc());
+          yield();
+        } else if(myproc()->quancnt >= TIMEQUANTUM1){
+          yield();
+        }
+        break;
+      
+      case 0:
+        if(myproc()->quancnt >= TIMEQUANTUM0){
+          yield();
+        }
+        break;
       }
-      break;
-
-    case 2:
-      if(myproc()->alltcnt >= TIMEALLOT2){
-        declevel(myproc());
-        yield();
-      } else if(myproc()->quancnt >= TIMEQUANTUM2){
-        yield();
-      }
-      break;
-    
-    case 1:
-      if(myproc()->alltcnt >= TIMEALLOT1){
-        declevel(myproc());
-        yield();
-      } else if(myproc()->quancnt >= TIMEQUANTUM1){
-        yield();
-      }
-      break;
-    
-    case 0:
-      if(myproc()->quancnt >= TIMEQUANTUM0){
-        yield();
-      }
-      break;
+    } else {
+      // This process is multi-thread process.
+      // Need to switch to another LWP.
     }
   }
 

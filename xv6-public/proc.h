@@ -53,7 +53,13 @@ struct proc {
   uint quancnt;                // Elapsed time in current time quantum (ticks)
   uint alltcnt;                // Total time used in current queue (ticks)
   int quelev;                  // Current queue level
+
+  int tid;                     // Thread ID
+  int tgid;                    // Thread Group ID which is same value as pid
+  int numthd;                  // The number of Thread within the process
+  int nexttid;                 // Next Thread ID for thread creation
 };
+
 
 // Process memory is laid out contiguously, low addresses first:
 //   text

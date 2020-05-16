@@ -6,6 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "thread.h"
 
 struct {
   struct spinlock lock;
@@ -163,6 +164,11 @@ userinit(void)
   p->alltcnt = 0;
   p->quelev = 2;
 
+  p->tid = p->pid;
+  p->tgid = p->pid;
+  p->numthd = 1;
+  p->nexttid = p->pid + 1;
+
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
   // writes to be visible, and the lock is also needed
@@ -245,6 +251,11 @@ fork(void)
   np->quancnt = 0;
   np->alltcnt = 0;
   np->quelev = 2;
+
+  np->tid = pid;
+  np->tgid = pid;
+  np->numthd = 1;
+  np->nexttid = pid + 1;
 
   acquire(&ptable.lock);
 
@@ -1082,3 +1093,137 @@ set_cpu_share(int share)
 
   return 0;
 }
+
+static struct proc*
+alloclwp(struct proc *caller)
+{
+  struct proc *p;
+  char *sp;
+
+  acquire(&ptable.lock);
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if(p->state == UNUSED)
+      goto found;
+
+  release(&ptable.lock);
+  return 0;
+
+found:
+  p->state = EMBRYO;
+  p->pid = caller->pid;
+
+  release(&ptable.lock);
+
+  // Allocate kernel stack.
+  if((p->kstack = kalloc()) == 0){
+    p->state = UNUSED;
+    return 0;
+  }
+  sp = p->kstack + KSTACKSIZE;
+
+  // Leave room for trap frame.
+  sp -= sizeof *p->tf;
+  p->tf = (struct trapframe*)sp;
+
+  // Set up new context to start executing at forkret,
+  // which returns to trapret.
+  sp -= 4;
+  *(uint*)sp = (uint)trapret;
+
+  sp -= sizeof *p->context;
+  p->context = (struct context*)sp;
+  memset(p->context, 0, sizeof *p->context);
+  p->context->eip = (uint)forkret;
+
+  return p;
+}
+
+int
+thread_create(struct thread_t *thread, 
+              void* (*start_routine)(void*), void *arg)
+{
+  int i;
+  struct proc *np;
+  struct proc *curproc = myproc();
+  uint sz, sp;
+
+  // Allocate LWP.
+  if((np = alloclwp(curproc)) == 0){
+    return -1;
+  }
+
+  np->sz = 0;
+  
+  // Set parent of new process to main thread.
+  if(curproc->pid == curproc->tid){
+    np->parent = curproc;
+  } else {
+    np->parent = curproc->parent;
+  }
+
+  *np->tf = *curproc->tf;
+
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd);
+
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  np->pgdir = curproc->pgdir;
+
+  np->quancnt = -1;
+  np->alltcnt = -1;
+  np->quelev = -1;
+
+  np->tid = np->parent->nexttid++;
+  np->tgid = curproc->pid;
+  np->numthd = 0;
+  np->parent->numthd++;
+  np->nexttid = -1;
+
+  // Allocate two pages at the next page boundary.
+  // Make the first inaccessible.  Use the second as the user stack.
+  sz = np->parent->sz;
+  sz = PGROUNDUP(sz);
+  if((sz = allocuvm(np->pgdir, sz, sz + 2*PGSIZE)) == 0)
+    goto bad;
+  clearpteu(np->pgdir, (char*)(sz - 2*PGSIZE));
+  sp = sz;
+
+  np->parent->sz = sz;
+
+  sp = (sp - sizeof(void*)) & ~3;
+  if(copyout(np->pgdir, sp, &arg, sizeof(void*)) < 0)
+    goto bad;
+
+  np->tf->eip = (uint)start_routine;
+  np->tf->esp = sp;
+
+  thread->tid = np->tid;
+
+  np->state = RUNNABLE;
+  return 0;
+bad:
+  np->parent->numthd--;
+  kfree(np->kstack);
+  np->state = UNUSED;
+  return -1;
+}
+
+void
+lwpswtch(void)
+{
+  struct proc *curproc = myproc();
+  int idx = curproc - ptable.proc;
+  int i;
+
+  acquire(&ptable.lock);
+
+  i = (idx + 1) % NPROC;
+  do{
+    if(ptable.proc[i].tgid == curproc->tgid){
+      
+
+  release(&ptable.lock);

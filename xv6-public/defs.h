@@ -9,6 +9,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct thread_t;
 
 // bio.c
 void            binit(void);
@@ -196,6 +197,12 @@ int		printk_str(char*);
 // mlfq.c
 void            declevel(struct proc*);
 void            priboost(void);
+
+// thread.c
+int             thread_create(struct thread_t* thread, 
+                              void* (*start_routine)(void*), void* arg);
+void            thread_exit(void* retval);
+int             thread_join(struct thread_t thread, void** retval);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
