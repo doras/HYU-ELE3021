@@ -37,6 +37,7 @@ idtinit(void)
 void
 trap(struct trapframe *tf)
 {
+  struct proc *proc;
   if(tf->trapno == T_SYSCALL){
     if(myproc()->killed)
       exit();
@@ -98,6 +99,8 @@ trap(struct trapframe *tf)
             "eip 0x%x addr 0x%x--kill proc\n",
             myproc()->pid, myproc()->name, tf->trapno,
             tf->err, cpuid(), tf->eip, rcr2());
+
+cprintf("tid %d, ebp %x, esp %x\n", myproc()->tid, myproc()->tf->ebp, myproc()->tf->esp);
     myproc()->killed = 1;
   }
 
@@ -111,45 +114,53 @@ trap(struct trapframe *tf)
   // If it needs yield, give up CPU. 
   if(myproc() && myproc()->state == RUNNING &&
      tf->trapno == T_IRQ0+IRQ_TIMER){
-    if(myproc()->pid == myproc()->tid && myproc()->numthd == 1){    
-      myproc()->quancnt++;
-      myproc()->alltcnt++;
-      
-      switch(myproc()->quelev){
-      case 3:
-        // It is stride process.
-        if(myproc()->quancnt >= TIMEQUANTUM3){
-          yield();
-        }
-        break;
-  
-      case 2:
-        if(myproc()->alltcnt >= TIMEALLOT2){
-          declevel(myproc());
-          yield();
-        } else if(myproc()->quancnt >= TIMEQUANTUM2){
-          yield();
-        }
-        break;
-      
-      case 1:
-        if(myproc()->alltcnt >= TIMEALLOT1){
-          declevel(myproc());
-          yield();
-        } else if(myproc()->quancnt >= TIMEQUANTUM1){
-          yield();
-        }
-        break;
-      
-      case 0:
-        if(myproc()->quancnt >= TIMEQUANTUM0){
-          yield();
-        }
-        break;
-      }
+
+    if(myproc()->tid == myproc()->tgid){
+      proc = myproc();
     } else {
-      // This process is multi-thread process.
-      // Need to switch to another LWP.
+      proc = myproc()->parent;
+    }
+
+    proc->quancnt++;
+    proc->alltcnt++;
+    
+    switch(proc->quelev){
+    case 3:
+      // It is stride process.
+      if(proc->quancnt >= TIMEQUANTUM3){
+        yield();
+      }
+      break;
+  
+    case 2:
+      if(proc->alltcnt >= TIMEALLOT2){
+        declevel(proc);
+        yield();
+      } else if(proc->quancnt >= TIMEQUANTUM2){
+        yield();
+      }
+      break;
+    
+    case 1:
+      if(proc->alltcnt >= TIMEALLOT1){
+        declevel(proc);
+        yield();
+      } else if(proc->quancnt >= TIMEQUANTUM1){
+        yield();
+      }
+      break;
+    
+    case 0:
+      if(proc->quancnt >= TIMEQUANTUM0){
+        yield();
+      }
+      break;
+    }
+
+    // If this process is multi-thread process,
+    // Need to switch to another LWP.
+    if(proc->numthd != 1){
+      lwpswtch();
     }
   }
 

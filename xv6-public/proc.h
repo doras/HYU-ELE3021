@@ -58,6 +58,12 @@ struct proc {
   int tgid;                    // Thread Group ID which is same value as pid
   int numthd;                  // The number of Thread within the process
   int nexttid;                 // Next Thread ID for thread creation
+
+  // LWP Group is managed by doubly circular linked list.
+  struct proc *nextlwp;        // Next LWP pointer
+  struct proc *prevlwp;        // Previous LWP pointer
+
+  struct proc *recentlwp;      // Most recently executed LWP
 };
 
 

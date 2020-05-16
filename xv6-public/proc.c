@@ -168,6 +168,9 @@ userinit(void)
   p->tgid = p->pid;
   p->numthd = 1;
   p->nexttid = p->pid + 1;
+  p->nextlwp = p;
+  p->prevlwp = p;
+  p->recentlwp = p;
 
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
@@ -256,6 +259,9 @@ fork(void)
   np->tgid = pid;
   np->numthd = 1;
   np->nexttid = pid + 1;
+  np->nextlwp = np;
+  np->prevlwp = np;
+  np->recentlwp = np;
 
   acquire(&ptable.lock);
 
@@ -495,11 +501,11 @@ scheduler(void)
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      c->proc = p;
+      c->proc = p->recentlwp;
       switchuvm(p);
-      p->state = RUNNING;
+      c->proc->state = RUNNING;
 
-      swtch(&(c->scheduler), p->context);
+      swtch(&(c->scheduler), c->proc->context);
       switchkvm();
 
       // Process is done running for now.
@@ -534,11 +540,11 @@ highest:
           // Switch to chosen process.  It is the process's job
           // to release ptable.lock and then reacquire it
           // before jumping back to us.
-          c->proc = p;
+          c->proc = p->recentlwp;
           switchuvm(p);
-          p->state = RUNNING;
+          c->proc->state = RUNNING;
 
-          swtch(&(c->scheduler), p->context);
+          swtch(&(c->scheduler), c->proc->context);
           switchkvm();
 
           // Process is done running for now.
@@ -566,11 +572,11 @@ highest:
           // Switch to chosen process.  It is the process's job
           // to release ptable.lock and then reacquire it
           // before jumping back to us.
-          c->proc = p;
+          c->proc = p->recentlwp;
           switchuvm(p);
-          p->state = RUNNING;
+          c->proc->state = RUNNING;
 
-          swtch(&(c->scheduler), p->context);
+          swtch(&(c->scheduler), c->proc->context);
           switchkvm();
 
           // Process is done running for now.
@@ -598,11 +604,11 @@ highest:
           // Switch to chosen process.  It is the process's job
           // to release ptable.lock and then reacquire it
           // before jumping back to us.
-          c->proc = p;
+          c->proc = p->recentlwp;
           switchuvm(p);
-          p->state = RUNNING;
+          c->proc->state = RUNNING;
 
-          swtch(&(c->scheduler), p->context);
+          swtch(&(c->scheduler), c->proc->context);
           switchkvm();
 
           // Process is done running for now.
@@ -798,10 +804,17 @@ sched(void)
 void
 yield(void)
 {
+  struct proc *proc;
   acquire(&ptable.lock);  //DOC: yieldlock
   myproc()->state = RUNNABLE;
+  if(myproc()->tid == myproc()->tgid)
+    proc = myproc();
+  else
+    proc = myproc()->parent;
+
+  proc->recentlwp = myproc();
   sched();
-  myproc()->quancnt = 0;
+  proc->quancnt = 0;
   release(&ptable.lock);
 }
 
@@ -1146,7 +1159,7 @@ thread_create(struct thread_t *thread,
   int i;
   struct proc *np;
   struct proc *curproc = myproc();
-  uint sz, sp;
+  uint sz, sp, ustack[2];
 
   // Allocate LWP.
   if((np = alloclwp(curproc)) == 0){
@@ -1183,6 +1196,13 @@ thread_create(struct thread_t *thread,
   np->parent->numthd++;
   np->nexttid = -1;
 
+  np->prevlwp = np->parent;
+  np->nextlwp = np->parent->nextlwp;
+  np->parent->nextlwp = np;
+  np->nextlwp->prevlwp = np;
+
+  np->recentlwp = 0;
+
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
   sz = np->parent->sz;
@@ -1194,8 +1214,12 @@ thread_create(struct thread_t *thread,
 
   np->parent->sz = sz;
 
-  sp = (sp - sizeof(void*)) & ~3;
-  if(copyout(np->pgdir, sp, &arg, sizeof(void*)) < 0)
+  ustack[0] = 0xffffffff; // fake return addr
+  ustack[1] = (uint)arg;
+
+  sp -= 2 * sizeof(uint);
+
+  if(copyout(np->pgdir, sp, ustack, 2 * sizeof(uint)) < 0)
     goto bad;
 
   np->tf->eip = (uint)start_routine;
@@ -1212,18 +1236,29 @@ bad:
   return -1;
 }
 
+// switch to another runnable LWP
 void
 lwpswtch(void)
 {
   struct proc *curproc = myproc();
-  int idx = curproc - ptable.proc;
-  int i;
-
+  struct proc *proc;
+ 
   acquire(&ptable.lock);
+     
+  curproc->state = RUNNABLE;
 
-  i = (idx + 1) % NPROC;
-  do{
-    if(ptable.proc[i].tgid == curproc->tgid){
-      
+  proc = curproc->nextlwp;
+
+  while(proc->state != RUNNABLE){
+    proc = proc->nextlwp;
+  }
+
+  if(proc != curproc){
+    mycpu()->proc = proc;
+    proc->state = RUNNING;
+    mycpu()->ts.esp0 = (uint)proc->kstack + KSTACKSIZE;
+    swtch(&(curproc->context), proc->context);
+  }
 
   release(&ptable.lock);
+}

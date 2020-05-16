@@ -125,6 +125,7 @@ int             getppid(void);
 void            declevel(struct proc *);
 void            priboost(void);
 int             set_cpu_share(int);
+void            lwpswtch(void);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
