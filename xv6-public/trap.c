@@ -160,7 +160,7 @@ cprintf("tid %d, ebp %x, esp %x\n", myproc()->tid, myproc()->tf->ebp, myproc()->
     // If this process is multi-thread process,
     // Need to switch to another LWP.
     if(proc->numthd != 1){
-      lwpswtch();
+      lwpyield();
     }
   }
 

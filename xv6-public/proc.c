@@ -936,7 +936,8 @@ procdump(void)
   [SLEEPING]  "sleep ",
   [RUNNABLE]  "runble",
   [RUNNING]   "run   ",
-  [ZOMBIE]    "zombie"
+  [ZOMBIE]    "zombie",
+  [ZOMBIE_THREAD] "zombie_thread"
   };
   int i;
   struct proc *p;
@@ -1243,10 +1244,6 @@ lwpswtch(void)
   struct proc *curproc = myproc();
   struct proc *proc;
  
-  acquire(&ptable.lock);
-     
-  curproc->state = RUNNABLE;
-
   proc = curproc->nextlwp;
 
   while(proc->state != RUNNABLE){
@@ -1259,56 +1256,42 @@ lwpswtch(void)
     mycpu()->ts.esp0 = (uint)proc->kstack + KSTACKSIZE;
     swtch(&(curproc->context), proc->context);
   }
+}
 
+// LWP version of yield
+void
+lwpyield(void)
+{
+  struct proc *curproc = myproc();
+  acquire(&ptable.lock);
+  curproc->state = RUNNABLE;
+  lwpswtch();
   release(&ptable.lock);
 }
 
 void
 thread_exit(void *retval)
 {
-//  struct proc *curproc = myproc();
-//  struct proc *p;
-//  int fd;
-//
-//  begin_op();
-//  iput(curproc->cwd);
-//  end_op();
-//  curproc->cwd = 0;
-//
-//  acquire(&ptable.lock);
-//
-//  // Parent might be sleeping in wait().
-//  wakeup1(curproc->parent);
-//
-//  // Pass abandoned children to init.
-//  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-//    if(p->parent == curproc){
-//      p->parent = initproc;
-//      if(p->state == ZOMBIE)
-//        wakeup1(initproc);
-//    }
-//  }
-//
-//  // Jump into the scheduler, never to return.
-//  curproc->state = ZOMBIE;
-//  sched();
-//
-//  acquire(&ptable.lock);
-//
-//  // Parent might be sleeping in wait().
-//  wakeup1(curproc->parent);
-//
-//  // Pass abandoned children to init.
-//  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-//    if(p->parent == curproc){
-//      p->parent = initproc;
-//      if(p->state == ZOMBIE)
-//        wakeup1(initproc);
-//    }
-//  }
-//
-//  // Jump into the scheduler, never to return.
-//  curproc->state = ZOMBIE;
-//  sched();
-//  panic("zombie exit");
+  struct proc *curproc = myproc();
+
+  // Main thread can't call this function.
+  if(curproc->tid == curproc->tgid){
+    return;
+  }
+
+  curproc->cwd = 0;
+
+  acquire(&ptable.lock);
+
+  // Parent might be sleeping in wait().
+  wakeup1(curproc->parent);
+
+
+  // Set retval
+  curproc->tf->eax = (uint)retval;
+  // Jump into the next LWP, never to return.
+  curproc->state = ZOMBIE_THREAD;
+  
+  lwpswtch();
+  panic("zombie thread exit");
 }

@@ -17,7 +17,12 @@
 int
 fetchint(uint addr, int *ip)
 {
-  struct proc *curproc = myproc();
+  struct proc *curproc;
+
+  if(myproc()->tid == myproc()->tgid)
+    curproc = myproc();
+  else
+    curproc = myproc()->parent;
 
   if(addr >= curproc->sz || addr+4 > curproc->sz)
     return -1;
@@ -109,6 +114,7 @@ extern int sys_yield(void);
 extern int sys_getlev(void); 
 extern int sys_set_cpu_share(void);
 extern int sys_thread_create(void);
+extern int sys_thread_exit(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -138,6 +144,7 @@ static int (*syscalls[])(void) = {
 [SYS_getlev]  sys_getlev,  
 [SYS_set_cpu_share] sys_set_cpu_share,
 [SYS_thread_create] sys_thread_create,
+[SYS_thread_exit]   sys_thread_exit,
 };
 
 void

@@ -138,3 +138,16 @@ sys_thread_create(void)
     return -1;
   return thread_create(thread, start_routine, arg);
 }
+
+int
+sys_thread_exit(void)
+{
+  void *retval;
+  
+  if(argint(0, (int*)&retval) < 0)
+    panic("syscall thread exit");
+  thread_exit(retval);
+ 
+  // This function never return.
+  return -1;
+}

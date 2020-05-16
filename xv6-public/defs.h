@@ -126,6 +126,7 @@ void            declevel(struct proc *);
 void            priboost(void);
 int             set_cpu_share(int);
 void            lwpswtch(void);
+void            lwpyield(void);
 int             thread_create(struct thread_t* thread, 
                               void* (*start_routine)(void*), void* arg);
 void            thread_exit(void* retval);

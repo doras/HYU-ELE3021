@@ -9,7 +9,8 @@ int nums[5];
 
 void* func(void* arg){
   int i = 0;
-  int* num = arg;
+  int idx = *(int*)arg;
+  int* num = &nums[idx];
 
   printf(1, "func!\n");
 
@@ -17,9 +18,9 @@ void* func(void* arg){
     (*num)++;
   }
 
-  for(;;);
+  thread_exit(&idx);
 
-  return arg;
+  return 0;
 }
 
 int main(){
@@ -27,8 +28,11 @@ int main(){
 
   struct thread_t thd[5];
 
+  int args[5] = {0, 1, 2, 3 ,4};
+
+
   for(i = 0; i < 5; ++i){
-    thread_create(&thd[i], &func, &nums[i]);
+    thread_create(&thd[i], &func, &args[i]);
   }
 
 
