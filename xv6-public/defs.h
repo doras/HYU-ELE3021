@@ -126,6 +126,10 @@ void            declevel(struct proc *);
 void            priboost(void);
 int             set_cpu_share(int);
 void            lwpswtch(void);
+int             thread_create(struct thread_t* thread, 
+                              void* (*start_routine)(void*), void* arg);
+void            thread_exit(void* retval);
+int             thread_join(struct thread_t thread, void** retval);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -198,12 +202,6 @@ int		printk_str(char*);
 // mlfq.c
 void            declevel(struct proc*);
 void            priboost(void);
-
-// thread.c
-int             thread_create(struct thread_t* thread, 
-                              void* (*start_routine)(void*), void* arg);
-void            thread_exit(void* retval);
-int             thread_join(struct thread_t thread, void** retval);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

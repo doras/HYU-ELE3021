@@ -26,7 +26,6 @@ int main(){
   int i;
 
   struct thread_t thd[5];
-  printf(1, "address: %x\n", &func);
 
   for(i = 0; i < 5; ++i){
     thread_create(&thd[i], &func, &nums[i]);
@@ -38,7 +37,12 @@ int main(){
   }
 
 
-  while(1);
+  for(i = 0; i < 1000000; ++i);
+
+
+  for(i = 0; i < 5; ++i){
+    printf(1, "%d -> %d\n", i, nums[i]);
+  }
 
   exit();
 }

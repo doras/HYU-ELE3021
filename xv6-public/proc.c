@@ -1179,8 +1179,8 @@ thread_create(struct thread_t *thread,
 
   for(i = 0; i < NOFILE; i++)
     if(curproc->ofile[i])
-      np->ofile[i] = filedup(curproc->ofile[i]);
-  np->cwd = idup(curproc->cwd);
+      np->ofile[i] = curproc->ofile[i];
+  np->cwd = curproc->cwd;
 
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
@@ -1261,4 +1261,54 @@ lwpswtch(void)
   }
 
   release(&ptable.lock);
+}
+
+void
+thread_exit(void *retval)
+{
+//  struct proc *curproc = myproc();
+//  struct proc *p;
+//  int fd;
+//
+//  begin_op();
+//  iput(curproc->cwd);
+//  end_op();
+//  curproc->cwd = 0;
+//
+//  acquire(&ptable.lock);
+//
+//  // Parent might be sleeping in wait().
+//  wakeup1(curproc->parent);
+//
+//  // Pass abandoned children to init.
+//  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+//    if(p->parent == curproc){
+//      p->parent = initproc;
+//      if(p->state == ZOMBIE)
+//        wakeup1(initproc);
+//    }
+//  }
+//
+//  // Jump into the scheduler, never to return.
+//  curproc->state = ZOMBIE;
+//  sched();
+//
+//  acquire(&ptable.lock);
+//
+//  // Parent might be sleeping in wait().
+//  wakeup1(curproc->parent);
+//
+//  // Pass abandoned children to init.
+//  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+//    if(p->parent == curproc){
+//      p->parent = initproc;
+//      if(p->state == ZOMBIE)
+//        wakeup1(initproc);
+//    }
+//  }
+//
+//  // Jump into the scheduler, never to return.
+//  curproc->state = ZOMBIE;
+//  sched();
+//  panic("zombie exit");
 }
