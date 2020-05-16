@@ -31,6 +31,7 @@ int getlev(void);
 int set_cpu_share(int);
 int thread_create(struct thread_t*, void* (*)(void*), void*);
 int thread_exit(void*);
+int thread_join(struct thread_t, void**);
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -18,7 +18,7 @@ void* func(void* arg){
     (*num)++;
   }
 
-  thread_exit(&idx);
+  thread_exit((void*)idx);
 
   return 0;
 }
@@ -27,6 +27,8 @@ int main(){
   int i;
 
   struct thread_t thd[5];
+
+  int retvals[5];
 
   int args[5] = {0, 1, 2, 3 ,4};
 
@@ -41,11 +43,16 @@ int main(){
   }
 
 
-  for(i = 0; i < 1000000; ++i);
+  for(i = 0; i < 5; ++i){
+    if(thread_join(thd[i], (void**)&retvals[i]) != 0){
+      printf(1, "test join fail");
+      exit();
+    }
+  }
 
 
   for(i = 0; i < 5; ++i){
-    printf(1, "%d -> %d\n", i, nums[i]);
+    printf(1, "%d -> %d, ret : %d\n", i, nums[i], retvals[i]);
   }
 
   exit();

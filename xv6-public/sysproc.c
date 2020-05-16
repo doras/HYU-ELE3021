@@ -151,3 +151,15 @@ sys_thread_exit(void)
   // This function never return.
   return -1;
 }
+
+int
+sys_thread_join(void)
+{
+  struct thread_t thread;
+  void **retval;
+
+  if(argptr(0, (void*)&thread, sizeof(thread)) < 0 ||
+     argint(1, (int*)&retval) < 0)
+    return -1;
+  return thread_join(thread, retval);
+}

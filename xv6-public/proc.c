@@ -1295,3 +1295,48 @@ thread_exit(void *retval)
   lwpswtch();
   panic("zombie thread exit");
 }
+
+int
+thread_join(struct thread_t thread, void **retval)
+{
+  struct proc *p;
+  int found = 0;
+  struct proc *curproc = myproc();
+  
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for exited LWPs within same group.
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->tid != thread.tid)
+        continue;
+      if(p->state == ZOMBIE_THREAD){
+        // Found one.
+        found = 1;
+        *retval = (void*)p->tf->eax;
+        kfree(p->kstack);
+        p->kstack = 0;
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        p->state = UNUSED;
+  
+        p->prevlwp->nextlwp = p->nextlwp;
+        p->nextlwp->prevlwp = p->prevlwp;
+      
+        release(&ptable.lock);
+        return 0;
+      }
+    }
+
+    // No point waiting if we don't have such thread.
+    if(!found || curproc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in thread_exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
+  
+}
