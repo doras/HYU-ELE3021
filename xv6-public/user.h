@@ -1,6 +1,7 @@
 struct stat;
 struct rtcdate;
 struct thread_t;
+typedef struct thread_t thread_t;
 
 // system calls
 int fork(void);
@@ -30,7 +31,7 @@ int yield(void);
 int getlev(void);
 int set_cpu_share(int);
 int thread_create(struct thread_t*, void* (*)(void*), void*);
-int thread_exit(void*);
+int thread_exit(void*) __attribute__((noreturn));
 int thread_join(struct thread_t, void**);
 
 // ulib.c

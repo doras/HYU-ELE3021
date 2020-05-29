@@ -11,13 +11,15 @@ int
 exec(char *path, char **argv)
 {
   char *s, *last;
-  int i, off;
+  int i, off, fd;
   uint argc, sz, sp, ustack[3+MAXARG+1];
   struct elfhdr elf;
   struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
+  struct proc *mainthd = myproc();
+  struct proc *lwp;
 
   begin_op();
 
@@ -87,11 +89,55 @@ exec(char *path, char **argv)
   if(copyout(pgdir, sp, ustack, (3+argc+1)*4) < 0)
     goto bad;
 
+  if(curproc->tgid != curproc->tid){
+    mainthd = curproc->parent;
+    curproc->state = RUNNING;
+    curproc->parent = mainthd->parent;
+    curproc->tid = mainthd->tid;
+    curproc->sz = mainthd->sz;
+  }
+
   // Save program name for debugging.
   for(last=s=path; *s; s++)
     if(*s == '/')
       last = s+1;
   safestrcpy(curproc->name, last, sizeof(curproc->name));
+
+  exec1(mainthd);
+
+  lwp = curproc->nextlwp;
+  while(lwp != curproc){
+    if(lwp->tgid != curproc->tgid)
+      panic("exec remove lwp");
+    kfree(lwp->kstack);
+    lwp->cwd = 0;
+    for(fd = 0; fd < NOFILE; fd++){
+      if(lwp->ofile[fd]){
+        lwp->ofile[fd] = 0;
+      }
+    }
+    lwp->kstack = 0;
+    lwp->pid = 0;
+    lwp->parent = 0;
+    lwp->name[0] = 0;
+    lwp->killed = 0;
+    lwp->state = UNUSED;
+  
+    lwp = lwp->nextlwp;
+  }
+
+  curproc->quancnt = 0;
+  curproc->alltcnt = 0;
+  curproc->quelev = 2;
+  curproc->nextlwp = curproc;
+  curproc->prevlwp = curproc;
+  curproc->numthd = 1;
+  curproc->nexttid = curproc->tid + 1;
+  curproc->recentlwp = curproc;
+  curproc->lwpstate = L_RUNNING;
+  curproc->joinproc = 0;
+
+  mlfqadd(curproc);
 
   // Commit to the user image.
   oldpgdir = curproc->pgdir;

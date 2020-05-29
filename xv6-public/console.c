@@ -237,13 +237,17 @@ consoleread(struct inode *ip, char *dst, int n)
 {
   uint target;
   int c;
+  struct proc *mainthd = myproc();
+
+  if(mainthd->tgid != mainthd->tid)
+    mainthd = mainthd->parent;
 
   iunlock(ip);
   target = n;
   acquire(&cons.lock);
   while(n > 0){
     while(input.r == input.w){
-      if(myproc()->killed){
+      if(mainthd->killed){
         release(&cons.lock);
         ilock(ip);
         return -1;

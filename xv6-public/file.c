@@ -9,6 +9,8 @@
 #include "spinlock.h"
 #include "sleeplock.h"
 #include "file.h"
+#include "mmu.h"
+#include "proc.h"
 
 struct devsw devsw[NDEV];
 struct {
@@ -130,6 +132,7 @@ filewrite(struct file *f, char *addr, int n)
     // and 2 blocks of slop for non-aligned writes.
     // this really belongs lower down, since writei()
     // might be writing a device like the console.
+    acquire(&ftable.lock);
     int max = ((MAXOPBLOCKS-1-1-2) / 2) * 512;
     int i = 0;
     while(i < n){
@@ -150,8 +153,44 @@ filewrite(struct file *f, char *addr, int n)
         panic("short filewrite");
       i += r;
     }
+    release(&ftable.lock);
     return i == n ? n : -1;
   }
   panic("filewrite");
 }
 
+// Allocate a file descriptor for the given file.
+// Takes over file reference from caller on success.
+// This function is for sysfile.c
+int
+fdalloc(struct file *f)
+{
+  int fd;
+  struct proc *curproc = myproc();
+
+  if(curproc->tgid != curproc->tid)
+    curproc = curproc->parent;
+
+  acquire(&ftable.lock);
+  for(fd = 0; fd < NOFILE; fd++){
+    if(curproc->ofile[fd] == 0){
+      curproc->ofile[fd] = f;
+      release(&ftable.lock);
+      return fd;
+    }
+  }
+  release(&ftable.lock);
+  return -1;
+}
+
+// Reset file descriptor of given process to 0.
+// This function is for sysfile.c
+void
+resetofile(struct proc *p, int fd)
+{
+  acquire(&ftable.lock);
+
+  p->ofile[fd] = 0;
+
+  release(&ftable.lock);
+}

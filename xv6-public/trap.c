@@ -37,13 +37,18 @@ idtinit(void)
 void
 trap(struct trapframe *tf)
 {
-  struct proc *proc;
+  struct proc *mainthd = myproc();
+
+  if(myproc())
+    if(mainthd->tgid != mainthd->tid)
+      mainthd = mainthd->parent;
+
   if(tf->trapno == T_SYSCALL){
-    if(myproc()->killed)
+    if(mainthd->killed)
       exit();
     myproc()->tf = tf;
     syscall();
-    if(myproc()->killed)
+    if(mainthd->killed)
       exit();
     return;
   }
@@ -99,59 +104,51 @@ trap(struct trapframe *tf)
             "eip 0x%x addr 0x%x--kill proc\n",
             myproc()->pid, myproc()->name, tf->trapno,
             tf->err, cpuid(), tf->eip, rcr2());
-
-cprintf("tid %d, ebp %x, esp %x\n", myproc()->tid, myproc()->tf->ebp, myproc()->tf->esp);
-    myproc()->killed = 1;
+    mainthd->killed = 1;
   }
 
   // Force process exit if it has been killed and is in user space.
   // (If it is still executing in the kernel, let it keep running
   // until it gets to the regular system call return.)
-  if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
+  if(myproc() && mainthd->killed && (tf->cs&3) == DPL_USER)
     exit();
 
   // Check time quantum and time allotment.
   // If it needs yield, give up CPU. 
-  if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER){
+  if(myproc() && mainthd->state == RUNNING &&
+      tf->trapno == T_IRQ0+IRQ_TIMER){
 
-    if(myproc()->tid == myproc()->tgid){
-      proc = myproc();
-    } else {
-      proc = myproc()->parent;
-    }
-
-    proc->quancnt++;
-    proc->alltcnt++;
+    mainthd->quancnt++;
+    mainthd->alltcnt++;
     
-    switch(proc->quelev){
+    switch(mainthd->quelev){
     case 3:
       // It is stride process.
-      if(proc->quancnt >= TIMEQUANTUM3){
+      if(mainthd->quancnt >= TIMEQUANTUM3){
         yield();
       }
       break;
   
     case 2:
-      if(proc->alltcnt >= TIMEALLOT2){
-        declevel(proc);
+      if(mainthd->alltcnt >= TIMEALLOT2){
+        declevel(mainthd);
         yield();
-      } else if(proc->quancnt >= TIMEQUANTUM2){
+      } else if(mainthd->quancnt >= TIMEQUANTUM2){
         yield();
       }
       break;
     
     case 1:
-      if(proc->alltcnt >= TIMEALLOT1){
-        declevel(proc);
+      if(mainthd->alltcnt >= TIMEALLOT1){
+        declevel(mainthd);
         yield();
-      } else if(proc->quancnt >= TIMEQUANTUM1){
+      } else if(mainthd->quancnt >= TIMEQUANTUM1){
         yield();
       }
       break;
     
     case 0:
-      if(proc->quancnt >= TIMEQUANTUM0){
+      if(mainthd->quancnt >= TIMEQUANTUM0){
         yield();
       }
       break;
@@ -159,13 +156,13 @@ cprintf("tid %d, ebp %x, esp %x\n", myproc()->tid, myproc()->tf->ebp, myproc()->
 
     // If this process is multi-thread process,
     // Need to switch to another LWP.
-    if(proc->numthd != 1){
+    if(mainthd->numthd != 1){
       lwpyield();
     }
   }
 
 
   // Check if the process has been killed since we yielded
-  if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
+  if(myproc() && mainthd->killed && (tf->cs&3) == DPL_USER)
     exit();
 }

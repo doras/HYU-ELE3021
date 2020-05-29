@@ -6,7 +6,6 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
-#include "thread.h"
 
 int
 sys_fork(void)
@@ -52,15 +51,12 @@ sys_getpid(void)
 int
 sys_sbrk(void)
 {
-  int addr;
   int n;
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
-  return addr;
+
+  return sbrk(n);
 }
 
 int
@@ -68,13 +64,17 @@ sys_sleep(void)
 {
   int n;
   uint ticks0;
+  struct proc *mainthd = myproc();
+
+  if(mainthd->tgid != mainthd->tid)
+    mainthd = mainthd->parent;
 
   if(argint(0, &n) < 0)
     return -1;
   acquire(&tickslock);
   ticks0 = ticks;
   while(ticks - ticks0 < n){
-    if(myproc()->killed){
+    if(mainthd->killed){
       release(&tickslock);
       return -1;
     }
@@ -158,8 +158,9 @@ sys_thread_join(void)
   struct thread_t thread;
   void **retval;
 
-  if(argptr(0, (void*)&thread, sizeof(thread)) < 0 ||
-     argint(1, (int*)&retval) < 0)
+  if(argint(0, (int*)&thread.tid) < 0 || argint(1, (int*)&thread.tgid) < 0 ||
+     argint(2, (int*)&retval) < 0){
     return -1;
+  }
   return thread_join(thread, retval);
 }

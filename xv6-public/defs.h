@@ -10,6 +10,7 @@ struct sleeplock;
 struct stat;
 struct superblock;
 struct thread_t;
+typedef uint pte_t;
 
 // bio.c
 void            binit(void);
@@ -34,6 +35,8 @@ void            fileinit(void);
 int             fileread(struct file*, char*, int n);
 int             filestat(struct file*, struct stat*);
 int             filewrite(struct file*, char*, int n);
+int		fdalloc(struct file*);
+void		resetofile(struct proc*, int);
 
 // fs.c
 void            readsb(int dev, struct superblock *sb);
@@ -122,7 +125,7 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 int             getppid(void);
-void            declevel(struct proc *);
+void            declevel(struct proc*);
 void            priboost(void);
 int             set_cpu_share(int);
 void            lwpswtch(void);
@@ -131,6 +134,9 @@ int             thread_create(struct thread_t* thread,
                               void* (*start_routine)(void*), void* arg);
 void            thread_exit(void* retval);
 int             thread_join(struct thread_t thread, void** retval);
+void		exec1(struct proc*);
+void		mlfqadd(struct proc*);
+int		sbrk(int);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -196,6 +202,8 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+pte_t *		walkpgdir(pde_t *pgdir, const void *va, int alloc);
+uint		trimuvm(pde_t *pgdir, uint sz);
 
 // prac_syscall.c
 int		printk_str(char*);

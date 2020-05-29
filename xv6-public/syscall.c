@@ -39,6 +39,11 @@ fetchstr(uint addr, char **pp)
   char *s, *ep;
   struct proc *curproc = myproc();
 
+  if(myproc()->tid == myproc()->tgid)
+    curproc = myproc();
+  else
+    curproc = myproc()->parent;
+
   if(addr >= curproc->sz)
     return -1;
   *pp = (char*)addr;
@@ -65,11 +70,15 @@ argptr(int n, char **pp, int size)
 {
   int i;
   struct proc *curproc = myproc();
+
+  if(curproc->tgid != curproc->tid)
+    curproc = curproc->parent;
  
   if(argint(n, &i) < 0)
     return -1;
-  if(size < 0 || (uint)i >= curproc->sz || (uint)i+size > curproc->sz)
+  if(size < 0 || (uint)i >= curproc->sz || (uint)i+size > curproc->sz){
     return -1;
+  }
   *pp = (char*)i;
   return 0;
 }

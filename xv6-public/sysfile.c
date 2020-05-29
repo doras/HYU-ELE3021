@@ -23,33 +23,20 @@ argfd(int n, int *pfd, struct file **pf)
 {
   int fd;
   struct file *f;
+  struct proc *mainthd = myproc();
+
+  if(mainthd->tgid != mainthd->tid)
+    mainthd = mainthd->parent;
 
   if(argint(n, &fd) < 0)
     return -1;
-  if(fd < 0 || fd >= NOFILE || (f=myproc()->ofile[fd]) == 0)
+  if(fd < 0 || fd >= NOFILE || (f=mainthd->ofile[fd]) == 0)
     return -1;
   if(pfd)
     *pfd = fd;
   if(pf)
     *pf = f;
   return 0;
-}
-
-// Allocate a file descriptor for the given file.
-// Takes over file reference from caller on success.
-static int
-fdalloc(struct file *f)
-{
-  int fd;
-  struct proc *curproc = myproc();
-
-  for(fd = 0; fd < NOFILE; fd++){
-    if(curproc->ofile[fd] == 0){
-      curproc->ofile[fd] = f;
-      return fd;
-    }
-  }
-  return -1;
 }
 
 int
@@ -85,8 +72,15 @@ sys_write(void)
   int n;
   char *p;
 
-  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
+//  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
+//    return -1;
+  if(argfd(0,0,&f) < 0)
     return -1;
+  if(argint(2,&n) < 0)
+    return -1;
+  if(argptr(1, &p, n) < 0)
+    return -1;
+
   return filewrite(f, p, n);
 }
 
@@ -95,10 +89,14 @@ sys_close(void)
 {
   int fd;
   struct file *f;
+  struct proc *mainthd = myproc();
+  
+  if(mainthd->tgid != mainthd->tid)
+    mainthd = mainthd->parent;
 
   if(argfd(0, &fd, &f) < 0)
     return -1;
-  myproc()->ofile[fd] = 0;
+  resetofile(mainthd, fd);
   fileclose(f);
   return 0;
 }
@@ -425,6 +423,10 @@ sys_pipe(void)
   int *fd;
   struct file *rf, *wf;
   int fd0, fd1;
+  struct proc *mainthd = myproc();
+
+  if(mainthd->tgid != mainthd->tid)
+    mainthd = mainthd->parent;
 
   if(argptr(0, (void*)&fd, 2*sizeof(fd[0])) < 0)
     return -1;
@@ -432,8 +434,9 @@ sys_pipe(void)
     return -1;
   fd0 = -1;
   if((fd0 = fdalloc(rf)) < 0 || (fd1 = fdalloc(wf)) < 0){
-    if(fd0 >= 0)
-      myproc()->ofile[fd0] = 0;
+    if(fd0 >= 0){
+      resetofile(mainthd, fd0);
+    }
     fileclose(rf);
     fileclose(wf);
     return -1;

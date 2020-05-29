@@ -32,14 +32,15 @@ struct context {
   uint eip;
 };
 
-enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE, ZOMBIE_THREAD };
+enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE, LWP };
+enum lwpstate { L_UNUSED, L_SLEEPING, L_RUNNABLE, L_RUNNING, L_ZOMBIE };
 
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
   pde_t* pgdir;                // Page table
   char *kstack;                // Bottom of kernel stack for this process
-  enum procstate state;        // Process state
+  enum procstate state;        // Process state (only valid in main thread)
   int pid;                     // Process ID
   struct proc *parent;         // Parent process
   struct trapframe *tf;        // Trap frame for current syscall
@@ -56,7 +57,8 @@ struct proc {
 
   int tid;                     // Thread ID
   int tgid;                    // Thread Group ID which is same value as pid
-  int numthd;                  // The number of Thread within the process
+  int numthd;                  // The number of Thread within the process 
+                               //     except UNUSED, ZOMBIE LWP.
   int nexttid;                 // Next Thread ID for thread creation
 
   // LWP Group is managed by doubly circular linked list.
@@ -64,6 +66,9 @@ struct proc {
   struct proc *prevlwp;        // Previous LWP pointer
 
   struct proc *recentlwp;      // Most recently executed LWP
+
+  enum lwpstate lwpstate;      // State of LWP.
+  struct proc *joinproc;       // The process that call thread_join to this.
 };
 
 

@@ -1,7 +1,6 @@
 #include "types.h"
 #include "stat.h"
 #include "user.h"
-#include "thread.h"
 
 #define LOOPCOUNT 100
 
