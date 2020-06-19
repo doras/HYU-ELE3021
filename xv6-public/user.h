@@ -35,6 +35,8 @@ int thread_exit(void*) __attribute__((noreturn));
 int thread_join(struct thread_t, void**);
 int pread(int, void*, int, int);
 int pwrite(int, void*, int, int);
+int sync(void);
+int get_log_num(void);
 
 
 // ulib.c

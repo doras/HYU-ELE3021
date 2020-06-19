@@ -141,7 +141,7 @@ begin_op(void)
 }
 
 // called at the end of each FS system call.
-// commits if this was the last outstanding operation.
+// commits if this was the last outstanding operation AND there is no more sufficient spaces to save modified blocks.
 void
 end_op(void)
 {
@@ -151,7 +151,7 @@ end_op(void)
   log.outstanding -= 1;
   if(log.committing)
     panic("log.committing");
-  if(log.outstanding == 0){
+  if(log.outstanding == 0 && log.lh.n + MAXOPBLOCKS > LOGSIZE){
     do_commit = 1;
     log.committing = 1;
   } else {
@@ -232,3 +232,38 @@ log_write(struct buf *b)
   release(&log.lock);
 }
 
+int
+sync(void)
+{
+  acquire(&log.lock);
+
+  while(log.outstanding != 0){
+    sleep(&log, &log.lock);
+  }
+
+  if(log.committing){
+    while(log.committing)
+      sleep(&log, &log.lock);
+    release(&log.lock);
+    return 0;
+  }
+
+  log.committing = 1;
+  release(&log.lock);
+
+  // call commit w/o holding locks, since not allowed
+  // to sleep with locks.
+  commit();
+  acquire(&log.lock);
+  log.committing = 0;
+  wakeup(&log);
+  release(&log.lock);
+
+  return 0;
+}
+
+int
+get_log_num(void)
+{
+  return log.lh.n;
+}
