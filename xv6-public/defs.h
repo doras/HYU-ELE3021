@@ -37,6 +37,8 @@ int             filestat(struct file*, struct stat*);
 int             filewrite(struct file*, char*, int n);
 int		fdalloc(struct file*);
 void		resetofile(struct proc*, int);
+int		pread(struct file*, char*, int n, int off);
+int		pwrite(struct file*, char*, int n, int off);
 
 // fs.c
 void            readsb(int dev, struct superblock *sb);
@@ -56,6 +58,7 @@ struct inode*   nameiparent(char*, char*);
 int             readi(struct inode*, char*, uint, uint);
 void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, char*, uint, uint);
+int             pwritei(struct inode*, char*, uint, uint);
 
 // ide.c
 void            ideinit(void);
@@ -207,10 +210,6 @@ uint		trimuvm(pde_t *pgdir, uint sz);
 
 // prac_syscall.c
 int		printk_str(char*);
-
-// mlfq.c
-void            declevel(struct proc*);
-void            priboost(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

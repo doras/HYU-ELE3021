@@ -4,7 +4,7 @@
 
 int main(){
   int fd = open("hello.txt", 2);
-
+/* test for milestone1
   int num = 300;
 
   int buf[128];
@@ -16,6 +16,17 @@ int main(){
     result = read(fd, buf, 512);
 printf(1, "%d-th read: %d\n%d -> %d\n", i, result, buf[0], buf[127]);
   }
+*/
+
+  int num;
+  int i;
+  int result;
+  for(i = 0; i < 10; i++){
+    result = read(fd, &num, 4);
+    printf(1, "%d-th read(%d): %x\n", i, result, num);
+  }
+  
+  printf(1, "pread(%d): %x\n", pread(fd, &num, 4, 12), num);
 
   close(fd);
   exit();

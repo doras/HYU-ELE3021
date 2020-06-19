@@ -66,6 +66,19 @@ sys_read(void)
 }
 
 int
+sys_pread(void)
+{
+  struct file *f;
+  int n, off;
+  char *p;
+
+  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 
+      || argptr(1, &p, n) < 0 || argint(3, &off) < 0)
+    return -1;
+  return pread(f, p, n, off);
+}
+
+int
 sys_write(void)
 {
   struct file *f;
@@ -82,6 +95,20 @@ sys_write(void)
     return -1;
 
   return filewrite(f, p, n);
+}
+
+int
+sys_pwrite(void)
+{
+  struct file *f;
+  int n, off;
+  char *p;
+
+  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 
+      || argptr(1, &p, n) < 0 || argint(3, &off) < 0)
+    return -1;
+
+  return pwrite(f, p, n, off);
 }
 
 int
